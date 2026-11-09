@@ -13,11 +13,6 @@ blueprint:
       selector:
         device:
           integration: mqtt
-    action_topic:
-      name: Zigbee2MQTT-Aktionsthema
-      description: Das Thema aus dem MQTT-Listener, z. B. zigbee2mqtt/0x4c5bb3fffea00b66/action
-      selector:
-        text: {}
     lights:
       name: Lichter
       selector:
@@ -62,6 +57,18 @@ blueprint:
 mode: restart
 max_exceeded: silent
 
+variables:
+  selected_remote: !input remote
+
+# Zigbee2MQTT action topics have the form <base_topic>/<friendly_name>/action.
+# Match the topic's friendly name to the selected Home Assistant MQTT device.
+conditions:
+  - condition: template
+    value_template: >-
+      {{ trigger.platform != 'mqtt' or
+         (trigger.topic.split('/') | length >= 3 and
+          trigger.topic.split('/')[1] == device_attr(selected_remote, 'name')) }}
+
 triggers:
   # RODRET: Zigbee2MQTT-Action-Auslöser
   - trigger: device
@@ -91,19 +98,19 @@ triggers:
     id: darker
   # Kurze Tastendrücke werden direkt auf dem Z2M-Aktionsthema empfangen.
   - trigger: mqtt
-    topic: !input action_topic
+    topic: "+/+/action"
     payload: "on"
     id: button_1
   - trigger: mqtt
-    topic: !input action_topic
+    topic: "+/+/action"
     payload: "off"
     id: button_2
   - trigger: mqtt
-    topic: !input action_topic
+    topic: "+/+/action"
     payload: 1_short_release
     id: button_1
   - trigger: mqtt
-    topic: !input action_topic
+    topic: "+/+/action"
     payload: 2_short_release
     id: button_2
 
