@@ -41,6 +41,16 @@ blueprint:
           step: 50
           unit_of_measurement: ms
           mode: slider
+    max_loops:
+      name: Maximale Dimm-Schleifen
+      description: Sicherheitslimit für einen langen Tastendruck; danach endet das Dimmen automatisch.
+      default: 100
+      selector:
+        number:
+          min: 1
+          max: 1000
+          step: 1
+          mode: slider
     button_1_action:
       name: Aktion für Taste 1 / RODRET Ein-Taste
       description: Wird bei kurzem Druck ausgeführt. Bitte eine Aktion festlegen.
@@ -134,6 +144,7 @@ actions:
               dim_step: !input step_pct
               dim_direction: "{{ 1 if trigger.id == 'brighter' else -1 }}"
           - repeat:
+              count: !input max_loops
               sequence:
                 - action: light.turn_on
                   target: !input lights
@@ -159,6 +170,8 @@ actions:
                   timeout:
                     milliseconds: !input interval_ms
                   continue_on_timeout: true
-              until:
-                - condition: template
-                  value_template: "{{ wait.trigger is not none }}"
+                - if:
+                    - condition: template
+                      value_template: "{{ wait.trigger is not none }}"
+                  then:
+                    - stop: Fernbedienung losgelassen
