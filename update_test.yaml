@@ -1,0 +1,177 @@
+blueprint:
+  name: IKEA SOMRIG / RODRET – Licht per langem Tastendruck dimmen (Zigbee2MQTT)
+  description: >-
+    Dimmt ausgewählte Lichter stufenweise, solange Taste 1 oder 2 der IKEA
+    SOMRIG- oder RODRET-Fernbedienung gehalten wird. Benötigt Zigbee2MQTT mit
+    Home-Assistant-Geräteerkennung (MQTT Discovery). Die Aktionen müssen in HA
+    bereits erkannt sein; dafür jede Taste einmal betätigen.
+  domain: automation
+  input:
+    remote:
+      name: Fernbedienung
+      description: SOMRIG oder RODRET aus Zigbee2MQTT
+      selector:
+        device:
+          integration: mqtt
+    lights:
+      name: Lichter
+      selector:
+        target:
+          entity:
+            domain: light
+    step_pct:
+      name: Dimm-Schritt
+      description: Helligkeitsänderung pro Schritt
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 25
+          step: 1
+          unit_of_measurement: "%"
+          mode: slider
+    interval_ms:
+      name: Geschwindigkeit
+      description: Zeit zwischen den Helligkeitsschritten; kleiner bedeutet schneller
+      default: 200
+      selector:
+        number:
+          min: 50
+          max: 1000
+          step: 50
+          unit_of_measurement: ms
+          mode: slider
+    button_1_action:
+      name: Aktion für Taste 1 / RODRET Ein-Taste
+      description: Wird bei kurzem Druck ausgeführt. Standardmäßig wird das Licht umgeschaltet.
+      default: []
+      selector:
+        action: {}
+    button_2_action:
+      name: Aktion für Taste 2 / RODRET Aus-Taste
+      description: Wird bei kurzem Druck ausgeführt. Standardmäßig wird das Licht umgeschaltet.
+      default: []
+      selector:
+        action: {}
+
+mode: restart
+max_exceeded: silent
+
+triggers:
+  # RODRET: Zigbee2MQTT-Action-Auslöser
+  - trigger: device
+    domain: mqtt
+    device_id: !input remote
+    type: action
+    subtype: brightness_move_up
+    id: brighter
+  - trigger: device
+    domain: mqtt
+    device_id: !input remote
+    type: action
+    subtype: brightness_move_down
+    id: darker
+  # SOMRIG: Taste 1 (ein Punkt) und Taste 2 (zwei Punkte)
+  - trigger: device
+    domain: mqtt
+    device_id: !input remote
+    type: action
+    subtype: 1_long_press
+    id: brighter
+  - trigger: device
+    domain: mqtt
+    device_id: !input remote
+    type: action
+    subtype: 2_long_press
+    id: darker
+  # Kurze Tastendrücke: RODRET meldet on/off, SOMRIG short_release.
+  - trigger: device
+    domain: mqtt
+    device_id: !input remote
+    type: action
+    subtype: on
+    id: button_1
+  - trigger: device
+    domain: mqtt
+    device_id: !input remote
+    type: action
+    subtype: off
+    id: button_2
+  - trigger: device
+    domain: mqtt
+    device_id: !input remote
+    type: action
+    subtype: 1_short_release
+    id: button_1
+  - trigger: device
+    domain: mqtt
+    device_id: !input remote
+    type: action
+    subtype: 2_short_release
+    id: button_2
+
+actions:
+  - variables:
+      button1_actions: !input button_1_action
+      button2_actions: !input button_2_action
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: button_1
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ button1_actions | length > 0 }}"
+            then: !input button_1_action
+            else:
+              - action: light.toggle
+                target: !input lights
+      - conditions:
+          - condition: trigger
+            id: button_2
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ button2_actions | length > 0 }}"
+            then: !input button_2_action
+            else:
+              - action: light.toggle
+                target: !input lights
+      - conditions:
+          - condition: trigger
+            id:
+              - brighter
+              - darker
+        sequence:
+          - variables:
+              dim_step: !input step_pct
+              dim_direction: "{{ 1 if trigger.id == 'brighter' else -1 }}"
+          - repeat:
+              sequence:
+                - action: light.turn_on
+                  target: !input lights
+                  data:
+                    brightness_step_pct: "{{ dim_direction * (dim_step | int) }}"
+                - wait_for_trigger:
+                    # RODRET und SOMRIG senden beim Loslassen brightness_stop bzw. long_release.
+                    - trigger: device
+                      domain: mqtt
+                      device_id: !input remote
+                      type: action
+                      subtype: brightness_stop
+                    - trigger: device
+                      domain: mqtt
+                      device_id: !input remote
+                      type: action
+                      subtype: 1_long_release
+                    - trigger: device
+                      domain: mqtt
+                      device_id: !input remote
+                      type: action
+                      subtype: 2_long_release
+                  timeout:
+                    milliseconds: !input interval_ms
+                  continue_on_timeout: true
+              until:
+                - condition: template
+                  value_template: "{{ wait.trigger is not none }}"
