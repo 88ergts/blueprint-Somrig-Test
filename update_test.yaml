@@ -43,13 +43,13 @@ blueprint:
           mode: slider
     button_1_action:
       name: Aktion für Taste 1 / RODRET Ein-Taste
-      description: Wird bei kurzem Druck ausgeführt. Standardmäßig wird das Licht umgeschaltet.
+      description: Wird bei kurzem Druck ausgeführt. Bitte eine Aktion festlegen.
       default: []
       selector:
         action: {}
     button_2_action:
       name: Aktion für Taste 2 / RODRET Aus-Taste
-      description: Wird bei kurzem Druck ausgeführt. Standardmäßig wird das Licht umgeschaltet.
+      description: Wird bei kurzem Druck ausgeführt. Bitte eine Aktion festlegen.
       default: []
       selector:
         action: {}
@@ -111,32 +111,15 @@ triggers:
     id: button_2
 
 actions:
-  - variables:
-      button1_actions: !input button_1_action
-      button2_actions: !input button_2_action
   - choose:
       - conditions:
           - condition: trigger
             id: button_1
-        sequence:
-          - if:
-              - condition: template
-                value_template: "{{ button1_actions | length > 0 }}"
-            then: !input button_1_action
-            else:
-              - action: light.toggle
-                target: !input lights
+        sequence: !input button_1_action
       - conditions:
           - condition: trigger
             id: button_2
-        sequence:
-          - if:
-              - condition: template
-                value_template: "{{ button2_actions | length > 0 }}"
-            then: !input button_2_action
-            else:
-              - action: light.toggle
-                target: !input lights
+        sequence: !input button_2_action
       - conditions:
           - condition: trigger
             id:
