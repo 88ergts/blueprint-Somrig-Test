@@ -143,38 +143,6 @@ actions:
               - brighter
               - darker
         sequence:
-      dim_step: !input step_pct
-      dim_interval: !input interval_ms
-      dim_direction: "{{ 1 if trigger.id == 'brighter' else -1 }}"
-  - repeat:
-      sequence:
-        - action: light.turn_on
-          target: !input lights
-          data:
-            brightness_step_pct: "{{ dim_direction * (dim_step | int) }}"
-        - wait_for_trigger:
-            # RODRET und SOMRIG senden beim Loslassen brightness_stop bzw. long_release.
-            - trigger: device
-              domain: mqtt
-              device_id: !input remote
-              type: action
-              subtype: brightness_stop
-            - trigger: device
-              domain: mqtt
-              device_id: !input remote
-              type: action
-              subtype: 1_long_release
-            - trigger: device
-              domain: mqtt
-              device_id: !input remote
-              type: action
-              subtype: 2_long_release
-          timeout:
-            milliseconds: "{{ dim_interval | int }}"
-          continue_on_timeout: true
-      until:
-        - condition: template
-          value_template: "{{ wait.trigger is not none }}"
           - variables:
               dim_step: !input step_pct
               dim_direction: "{{ 1 if trigger.id == 'brighter' else -1 }}"
