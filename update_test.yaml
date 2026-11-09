@@ -13,6 +13,11 @@ blueprint:
       selector:
         device:
           integration: mqtt
+    action_topic:
+      name: Zigbee2MQTT-Aktionsthema
+      description: Das Thema aus dem MQTT-Listener, z. B. zigbee2mqtt/0x4c5bb3fffea00b66/action
+      selector:
+        text: {}
     lights:
       name: Lichter
       selector:
@@ -84,30 +89,22 @@ triggers:
     type: action
     subtype: 2_long_press
     id: darker
-  # Kurze Tastendrücke: RODRET meldet on/off, SOMRIG short_release.
-  - trigger: device
-    domain: mqtt
-    device_id: !input remote
-    type: action
-    subtype: on
+  # Kurze Tastendrücke werden direkt auf dem Z2M-Aktionsthema empfangen.
+  - trigger: mqtt
+    topic: !input action_topic
+    payload: "on"
     id: button_1
-  - trigger: device
-    domain: mqtt
-    device_id: !input remote
-    type: action
-    subtype: off
+  - trigger: mqtt
+    topic: !input action_topic
+    payload: "off"
     id: button_2
-  - trigger: device
-    domain: mqtt
-    device_id: !input remote
-    type: action
-    subtype: 1_short_release
+  - trigger: mqtt
+    topic: !input action_topic
+    payload: 1_short_release
     id: button_1
-  - trigger: device
-    domain: mqtt
-    device_id: !input remote
-    type: action
-    subtype: 2_short_release
+  - trigger: mqtt
+    topic: !input action_topic
+    payload: 2_short_release
     id: button_2
 
 actions:
