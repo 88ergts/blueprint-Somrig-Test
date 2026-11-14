@@ -15,11 +15,10 @@ blueprint:
           integration: mqtt
     lights:
       name: Lichter
-      description: Ein oder mehrere Licht-Entitäten
       selector:
-        entity:
-          domain: light
-          multiple: true
+        target:
+          entity:
+            domain: light
     step_pct:
       name: Dimm-Schritt
       description: Helligkeitsänderung pro Schritt
@@ -51,17 +50,6 @@ blueprint:
           min: 1
           max: 1000
           step: 1
-          mode: slider
-    min_brightness:
-      name: Mindesthelligkeit beim Herunterdimmen
-      description: Unter diesen Helligkeitswert dimmt der lange Tastendruck nicht; das Licht bleibt eingeschaltet.
-      default: 5
-      selector:
-        number:
-          min: 1
-          max: 50
-          step: 1
-          unit_of_measurement: "%"
           mode: slider
     button_1_action:
       name: Aktion für Taste 1 / RODRET Ein-Taste
@@ -153,49 +141,15 @@ actions:
               - darker
         sequence:
           - variables:
-              dim_lights: !input lights
               dim_step: !input step_pct
               dim_direction: "{{ 1 if trigger.id == 'brighter' else -1 }}"
-              min_brightness_pct: !input min_brightness
-          - variables:
-              min_brightness_raw: "{{ ((min_brightness_pct | float(5)) * 255 / 100) | round(0) | int }}"
           - repeat:
               count: !input max_loops
               sequence:
-                - if:
-                    - condition: template
-                      value_template: >-
-                        {% set ns = namespace(above_minimum=false) %}
-                        {% for entity_id in dim_lights %}
-                          {% if (state_attr(entity_id, 'brightness') | int(0)) > (min_brightness_raw | int) %}
-                            {% set ns.above_minimum = true %}
-                          {% endif %}
-                        {% endfor %}
-                        {{ (dim_direction | int) < 0 and not ns.above_minimum }}
-                  then:
-                    - stop: Mindesthelligkeit erreicht
-                - repeat:
-                    for_each: "{{ dim_lights }}"
-                    sequence:
-                      - variables:
-                          current_brightness_raw: "{{ state_attr(repeat.item, 'brightness') | int(0) }}"
-                          brightness_delta_raw: "{{ ((dim_step | float) * 255 / 100) | round(0) | int }}"
-                      - if:
-                          - condition: template
-                            value_template: >-
-                              {{ (dim_direction | int) > 0 or (current_brightness_raw | int) > (min_brightness_raw | int) }}
-                        then:
-                          - action: light.turn_on
-                            target:
-                              entity_id: "{{ repeat.item }}"
-                            data:
-                              brightness: >-
-                                {% set next_level = current_brightness_raw | int + (dim_direction | int * brightness_delta_raw | int) %}
-                                {% if dim_direction | int < 0 %}
-                                  {{ [min_brightness_raw | int, next_level] | max }}
-                                {% else %}
-                                  {{ [255, next_level] | min }}
-                                {% endif %}
+                - action: light.turn_on
+                  target: !input lights
+                  data:
+                    brightness_step_pct: "{{ dim_direction * (dim_step | int) }}"
                 - wait_for_trigger:
                     # RODRET und SOMRIG senden beim Loslassen brightness_stop bzw. long_release.
                     - trigger: device
