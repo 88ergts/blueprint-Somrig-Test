@@ -205,7 +205,7 @@ actions:
                     - variables:
                         dim_active_entities: >-
                           {% set ns = namespace(ids=[]) %}
-                          {% for entity_id in dim_light_entities | from_json %}
+                          {% for entity_id in dim_light_entities %}
                             {% set brightness = state_attr(entity_id, 'brightness') | int(0) %}
                             {% if states(entity_id) == 'on' and brightness > (min_brightness_raw | int + 1) %}
                               {% set ns.ids = ns.ids + [entity_id] %}
@@ -214,13 +214,13 @@ actions:
                           {{ ns.ids | to_json }}
                     - if:
                         - condition: template
-                          value_template: "{{ dim_active_entities | from_json | length == 0 }}"
+                          value_template: "{{ dim_active_entities | length == 0 }}"
                       then:
                         - stop: Mindesthelligkeit erreicht
                     - variables:
                         dim_safe_step_pct: >-
                           {% set ns = namespace(lowest=256) %}
-                          {% for entity_id in dim_active_entities | from_json %}
+                          {% for entity_id in dim_active_entities %}
                             {% set brightness = state_attr(entity_id, 'brightness') | int(0) %}
                             {% set ns.lowest = [ns.lowest, brightness] | min %}
                           {% endfor %}
@@ -228,7 +228,7 @@ actions:
                           {{ [dim_step | float, available_pct] | min }}
                     - action: light.turn_on
                       target:
-                        entity_id: "{{ dim_active_entities | from_json }}"
+                        entity_id: "{{ dim_active_entities }}"
                       data:
                         brightness_step_pct: "{{ 0 - (dim_safe_step_pct | float) }}"
                   else:
