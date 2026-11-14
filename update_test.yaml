@@ -176,6 +176,7 @@ actions:
                     - stop: Mindesthelligkeit erreicht
                 - repeat:
                     for_each: !input lights
+                    for_each: "{{ dim_lights }}"
                     sequence:
                       - variables:
                           current_brightness_raw: "{{ state_attr(repeat.item, 'brightness') | int(0) }}"
