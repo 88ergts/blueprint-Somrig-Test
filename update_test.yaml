@@ -175,7 +175,6 @@ actions:
                   then:
                     - stop: Mindesthelligkeit erreicht
                 - repeat:
-                    for_each: !input lights
                     for_each: "{{ dim_lights }}"
                     sequence:
                       - variables:
