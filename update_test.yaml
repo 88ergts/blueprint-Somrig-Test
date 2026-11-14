@@ -51,6 +51,17 @@ blueprint:
           max: 1000
           step: 1
           mode: slider
+    min_brightness:
+      name: Mindesthelligkeit beim Herunterdimmen
+      description: Unter diesen Helligkeitswert dimmt der lange Tastendruck nicht weiter, damit das Licht eingeschaltet bleibt.
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 50
+          step: 1
+          unit_of_measurement: "%"
+          mode: slider
     button_1_action:
       name: Aktion für Taste 1 / RODRET Ein-Taste
       description: Wird bei kurzem Druck ausgeführt. Bitte eine Aktion festlegen.
@@ -141,15 +152,90 @@ actions:
               - darker
         sequence:
           - variables:
+              dim_target: !input lights
               dim_step: !input step_pct
               dim_direction: "{{ 1 if trigger.id == 'brighter' else -1 }}"
+              min_brightness_pct: !input min_brightness
+          - variables:
+              min_brightness_raw: "{{ ((min_brightness_pct | float(5)) * 255 / 100) | round(0) | int }}"
+              dim_light_entities: >-
+                {% macro target_entities(target) %}
+                  {% set ns = namespace(ids=[]) %}
+                  {% set values = target.get('entity_id', []) %}
+                  {% if values is none %}{% set values = [] %}{% elif values is string %}{% set values = [values] %}{% endif %}
+                  {% set ns.ids = ns.ids + values %}
+                  {% set values = target.get('device_id', []) %}
+                  {% if values is none %}{% set values = [] %}{% elif values is string %}{% set values = [values] %}{% endif %}
+                  {% for device_id in values %}
+                    {% set ns.ids = ns.ids + (device_entities(device_id) | list) %}
+                  {% endfor %}
+                  {% set values = target.get('area_id', []) %}
+                  {% if values is none %}{% set values = [] %}{% elif values is string %}{% set values = [values] %}{% endif %}
+                  {% for area_id in values %}
+                    {% set ns.ids = ns.ids + (area_entities(area_id) | list) %}
+                  {% endfor %}
+                  {% set values = target.get('floor_id', []) %}
+                  {% if values is none %}{% set values = [] %}{% elif values is string %}{% set values = [values] %}{% endif %}
+                  {% for floor_id in values %}
+                    {% set ns.ids = ns.ids + (floor_entities(floor_id) | list) %}
+                  {% endfor %}
+                  {% set values = target.get('label_id', []) %}
+                  {% if values is none %}{% set values = [] %}{% elif values is string %}{% set values = [values] %}{% endif %}
+                  {% for label_id in values %}
+                    {% set ns.ids = ns.ids + (label_entities(label_id) | list) %}
+                  {% endfor %}
+                  {{ ns.ids | unique | list | to_json }}
+                {% endmacro %}
+                {% set included = target_entities(dim_target) | from_json %}
+                {% set excluded = target_entities(dim_target.get('exclude', {})) | from_json %}
+                {% set ns = namespace(ids=[]) %}
+                {% for entity_id in included %}
+                  {% if entity_id.startswith('light.') and entity_id not in excluded %}
+                    {% set ns.ids = ns.ids + [entity_id] %}
+                  {% endif %}
+                {% endfor %}
+                {{ ns.ids | unique | list | to_json }}
           - repeat:
               count: !input max_loops
               sequence:
-                - action: light.turn_on
-                  target: !input lights
-                  data:
-                    brightness_step_pct: "{{ dim_direction * (dim_step | int) }}"
+                - if:
+                    - condition: template
+                      value_template: "{{ (dim_direction | int) < 0 }}"
+                  then:
+                    - variables:
+                        dim_active_entities: >-
+                          {% set ns = namespace(ids=[]) %}
+                          {% for entity_id in dim_light_entities | from_json %}
+                            {% set brightness = state_attr(entity_id, 'brightness') | int(0) %}
+                            {% if states(entity_id) == 'on' and brightness > (min_brightness_raw | int + 1) %}
+                              {% set ns.ids = ns.ids + [entity_id] %}
+                            {% endif %}
+                          {% endfor %}
+                          {{ ns.ids | to_json }}
+                    - if:
+                        - condition: template
+                          value_template: "{{ dim_active_entities | from_json | length == 0 }}"
+                      then:
+                        - stop: Mindesthelligkeit erreicht
+                    - variables:
+                        dim_safe_step_pct: >-
+                          {% set ns = namespace(lowest=256) %}
+                          {% for entity_id in dim_active_entities | from_json %}
+                            {% set brightness = state_attr(entity_id, 'brightness') | int(0) %}
+                            {% set ns.lowest = [ns.lowest, brightness] | min %}
+                          {% endfor %}
+                          {% set available_pct = ((ns.lowest - (min_brightness_raw | int) - 1) * 100 / 255) %}
+                          {{ [dim_step | float, available_pct] | min }}
+                    - action: light.turn_on
+                      target:
+                        entity_id: "{{ dim_active_entities | from_json }}"
+                      data:
+                        brightness_step_pct: "{{ 0 - (dim_safe_step_pct | float) }}"
+                  else:
+                    - action: light.turn_on
+                      target: !input lights
+                      data:
+                        brightness_step_pct: "{{ dim_step | int }}"
                 - wait_for_trigger:
                     # RODRET und SOMRIG senden beim Loslassen brightness_stop bzw. long_release.
                     - trigger: device
