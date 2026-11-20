@@ -1,192 +1,154 @@
 
 blueprint:
-  name: Philips Hue Dimmer Switch 9290023986 (Zigbee2MQTT)
+  name: Philips Hue Dimmer 9290023986 – Zigbee2MQTT
   description: >
-    Blueprint für Philips Hue Dimmer Switch, Modell 9290023986.
-    Anbindung über Zigbee2MQTT MQTT Action Topic.
-
-    Vier Tasten mit individuell konfigurierbaren Aktionen.
-    Heller und Dunkler dimmen bei langem Tastendruck kontinuierlich.
-    Der Dimmvorgang endet beim Loslassen.
+    Philips Hue Dimmer Switch, Modell 9290023986.
+    Vier frei konfigurierbare Tastenaktionen.
+    Heller und Dunkler dimmen bei langem Tastendruck.
+    Kurz- und Langdruck werden sauber unterschieden.
 
   domain: automation
 
   input:
     mqtt_topic:
-      name: MQTT Action Topic
+      name: Zigbee2MQTT MQTT Topic
       description: >
-        Beispiel: zigbee2mqtt/Hue Dimmer/action
+        Beispiel: zigbee2mqtt/Hue Dimmer
+        Ohne /action am Ende.
       selector:
         text:
 
     dim_light:
       name: Dimmlampe
-      description: Licht oder Lichtgruppe, die gedimmt werden soll.
+      description: Licht oder Lichtgruppe
       selector:
         entity:
           domain: light
 
     dim_step:
-      name: Dimmgeschwindigkeit
-      description: Helligkeitsänderung pro Schritt in Prozent.
+      name: Dimmstufe
+      description: Helligkeitsänderung pro Hold-Ereignis
       default: 5
       selector:
         number:
           min: 1
-          max: 20
+          max: 25
           step: 1
           unit_of_measurement: "%"
 
-    dim_interval:
-      name: Dimmintervall
-      description: Zeit zwischen den Dimm-Schritten.
-      default: 0.25
-      selector:
-        number:
-          min: 0.1
-          max: 1
-          step: 0.05
-          unit_of_measurement: Sekunden
-
     on_action:
-      name: Taste EIN
-      description: Aktion bei kurzem Tastendruck.
+      name: EIN – kurzer Tastendruck
       default: []
       selector:
         action:
 
     up_action:
-      name: Taste HELLER
-      description: Aktion bei kurzem Tastendruck.
+      name: HELLER – kurzer Tastendruck
       default: []
       selector:
         action:
 
     down_action:
-      name: Taste DUNKLER
-      description: Aktion bei kurzem Tastendruck.
+      name: DUNKLER – kurzer Tastendruck
       default: []
       selector:
         action:
 
     off_action:
-      name: Taste AUS
-      description: Aktion bei kurzem Tastendruck.
+      name: AUS – kurzer Tastendruck
       default: []
       selector:
         action:
 
 trigger:
+  # Kurze Tastendrücke: erst beim Loslassen
   - platform: mqtt
     topic: !input mqtt_topic
+    value_template: "{{ value_json.action }}"
     payload: on_press_release
     id: on_short
 
   - platform: mqtt
     topic: !input mqtt_topic
+    value_template: "{{ value_json.action }}"
     payload: up_press_release
     id: up_short
 
   - platform: mqtt
     topic: !input mqtt_topic
+    value_template: "{{ value_json.action }}"
     payload: down_press_release
     id: down_short
 
   - platform: mqtt
     topic: !input mqtt_topic
+    value_template: "{{ value_json.action }}"
     payload: off_press_release
     id: off_short
 
+  # Langer Tastendruck: wiederholte Hold-Ereignisse
   - platform: mqtt
     topic: !input mqtt_topic
+    value_template: "{{ value_json.action }}"
     payload: up_hold
     id: up_hold
 
   - platform: mqtt
     topic: !input mqtt_topic
-    payload: up_hold_release
-    id: up_release
-
-  - platform: mqtt
-    topic: !input mqtt_topic
+    value_template: "{{ value_json.action }}"
     payload: down_hold
     id: down_hold
-
-  - platform: mqtt
-    topic: !input mqtt_topic
-    payload: down_hold_release
-    id: down_release
 
 action:
   - choose:
 
-      # EIN - kurzer Tastendruck
+      # EIN
       - conditions:
           - condition: trigger
             id: on_short
         sequence: !input on_action
 
-      # HELLER - kurzer Tastendruck
+      # HELLER kurz
       - conditions:
           - condition: trigger
             id: up_short
         sequence: !input up_action
 
-      # DUNKLER - kurzer Tastendruck
+      # DUNKLER kurz
       - conditions:
           - condition: trigger
             id: down_short
         sequence: !input down_action
 
-      # AUS - kurzer Tastendruck
+      # AUS
       - conditions:
           - condition: trigger
             id: off_short
         sequence: !input off_action
 
-      # HELLER - langer Tastendruck
+      # HELLER halten
       - conditions:
           - condition: trigger
             id: up_hold
         sequence:
-          - repeat:
-              while:
-                - condition: template
-                  value_template: "{{ true }}"
-              sequence:
-                - service: light.turn_on
-                  target:
-                    entity_id: !input dim_light
-                  data:
-                    brightness_step_pct: !input dim_step
-                - delay:
-                    seconds: !input dim_interval
+          - action: light.turn_on
+            target:
+              entity_id: !input dim_light
+            data:
+              brightness_step_pct: !input dim_step
 
-      # DUNKLER - langer Tastendruck
+      # DUNKLER halten
       - conditions:
           - condition: trigger
             id: down_hold
         sequence:
-          - repeat:
-              while:
-                - condition: template
-                  value_template: "{{ true }}"
-              sequence:
-                - service: light.turn_on
-                  target:
-                    entity_id: !input dim_light
-                  data:
-                    brightness_step_pct: "{{ 0 - (dim_step | int) }}"
-                - delay:
-                    seconds: !input dim_interval
+          - action: light.turn_on
+            target:
+              entity_id: !input dim_light
+            data:
+              brightness_step_pct: >
+                {{ 0 - (dim_step | int) }}
 
-      # Loslassen: beendet durch mode restart
-      - conditions:
-          - condition: trigger
-            id:
-              - up_release
-              - down_release
-        sequence: []
-
-mode: restart
+mode: queued
+max: 20
 max_exceeded: silent
