@@ -2,39 +2,49 @@
 blueprint:
   name: Philips Hue Dimmer 9290023986 – Zigbee2MQTT
   description: >
-    Philips Hue Dimmer Switch, Modell 9290023986.
-    Vier frei konfigurierbare Tastenaktionen.
-    Heller und Dunkler dimmen bei langem Tastendruck.
-    Kurz- und Langdruck werden sauber unterschieden.
+    Philips Hue Dimmer Switch 9290023986.
+    Direkte Geräteauswahl über MQTT-Geräteauslöser.
+    Vier individuell konfigurierbare Tasten.
+    Heller und Dunkler dimmen kontinuierlich bei langem Tastendruck.
 
   domain: automation
 
   input:
-    mqtt_topic:
-      name: Zigbee2MQTT MQTT Topic
-      description: >
-        Beispiel: zigbee2mqtt/Hue Dimmer
-        Ohne /action am Ende.
+    dimmer:
+      name: Philips Hue Dimmer
+      description: Den gewünschten Schalter auswählen.
       selector:
-        text:
+        device:
+          integration: mqtt
 
     dim_light:
       name: Dimmlampe
-      description: Licht oder Lichtgruppe
+      description: Lampe oder Lichtgruppe zum Dimmen.
       selector:
         entity:
           domain: light
 
     dim_step:
       name: Dimmstufe
-      description: Helligkeitsänderung pro Hold-Ereignis
-      default: 5
+      description: Helligkeitsänderung pro Schritt.
+      default: 3
       selector:
         number:
           min: 1
-          max: 25
+          max: 20
           step: 1
           unit_of_measurement: "%"
+
+    dim_interval:
+      name: Dimmgeschwindigkeit
+      description: Zeit zwischen den Helligkeitsänderungen.
+      default: 0.25
+      selector:
+        number:
+          min: 0.1
+          max: 1
+          step: 0.05
+          unit_of_measurement: Sekunden
 
     on_action:
       name: EIN – kurzer Tastendruck
@@ -60,67 +70,84 @@ blueprint:
       selector:
         action:
 
-trigger:
-  # Kurze Tastendrücke: erst beim Loslassen
-  - platform: mqtt
-    topic: !input mqtt_topic
-    value_template: "{{ value_json.action }}"
-    payload: on_press_release
+variables:
+  dim_step: !input dim_step
+
+triggers:
+  - trigger: device
+    domain: mqtt
+    device_id: !input dimmer
+    type: action
+    subtype: on_press_release
     id: on_short
 
-  - platform: mqtt
-    topic: !input mqtt_topic
-    value_template: "{{ value_json.action }}"
-    payload: up_press_release
+  - trigger: device
+    domain: mqtt
+    device_id: !input dimmer
+    type: action
+    subtype: up_press_release
     id: up_short
 
-  - platform: mqtt
-    topic: !input mqtt_topic
-    value_template: "{{ value_json.action }}"
-    payload: down_press_release
+  - trigger: device
+    domain: mqtt
+    device_id: !input dimmer
+    type: action
+    subtype: down_press_release
     id: down_short
 
-  - platform: mqtt
-    topic: !input mqtt_topic
-    value_template: "{{ value_json.action }}"
-    payload: off_press_release
+  - trigger: device
+    domain: mqtt
+    device_id: !input dimmer
+    type: action
+    subtype: off_press_release
     id: off_short
 
-  # Langer Tastendruck: wiederholte Hold-Ereignisse
-  - platform: mqtt
-    topic: !input mqtt_topic
-    value_template: "{{ value_json.action }}"
-    payload: up_hold
+  - trigger: device
+    domain: mqtt
+    device_id: !input dimmer
+    type: action
+    subtype: up_hold
     id: up_hold
 
-  - platform: mqtt
-    topic: !input mqtt_topic
-    value_template: "{{ value_json.action }}"
-    payload: down_hold
+  - trigger: device
+    domain: mqtt
+    device_id: !input dimmer
+    type: action
+    subtype: up_hold_release
+    id: up_release
+
+  - trigger: device
+    domain: mqtt
+    device_id: !input dimmer
+    type: action
+    subtype: down_hold
     id: down_hold
 
-action:
+  - trigger: device
+    domain: mqtt
+    device_id: !input dimmer
+    type: action
+    subtype: down_hold_release
+    id: down_release
+
+actions:
   - choose:
 
-      # EIN
       - conditions:
           - condition: trigger
             id: on_short
         sequence: !input on_action
 
-      # HELLER kurz
       - conditions:
           - condition: trigger
             id: up_short
         sequence: !input up_action
 
-      # DUNKLER kurz
       - conditions:
           - condition: trigger
             id: down_short
         sequence: !input down_action
 
-      # AUS
       - conditions:
           - condition: trigger
             id: off_short
@@ -131,24 +158,45 @@ action:
           - condition: trigger
             id: up_hold
         sequence:
-          - action: light.turn_on
-            target:
-              entity_id: !input dim_light
-            data:
-              brightness_step_pct: !input dim_step
+          - repeat:
+              while:
+                - condition: template
+                  value_template: "{{ true }}"
+              sequence:
+                - action: light.turn_on
+                  target:
+                    entity_id: !input dim_light
+                  data:
+                    brightness_step_pct: "{{ dim_step | int }}"
+                - delay:
+                    seconds: !input dim_interval
 
       # DUNKLER halten
       - conditions:
           - condition: trigger
             id: down_hold
         sequence:
-          - action: light.turn_on
-            target:
-              entity_id: !input dim_light
-            data:
-              brightness_step_pct: >
-                {{ 0 - (dim_step | int) }}
+          - repeat:
+              while:
+                - condition: template
+                  value_template: "{{ true }}"
+              sequence:
+                - action: light.turn_on
+                  target:
+                    entity_id: !input dim_light
+                  data:
+                    brightness_step_pct: "{{ 0 - (dim_step | int) }}"
+                - delay:
+                    seconds: !input dim_interval
 
-mode: queued
-max: 20
+      # Loslassen beendet den Dimmvorgang.
+      # Die Automation wird durch mode: restart neu gestartet.
+      - conditions:
+          - condition: trigger
+            id:
+              - up_release
+              - down_release
+        sequence: []
+
+mode: restart
 max_exceeded: silent
