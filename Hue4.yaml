@@ -1,0 +1,248 @@
+
+blueprint:
+  name: Philips Hue Dimmer 9290023986 – Zigbee2MQTT V3
+  description: >
+    Vier Tasten mit individuellen Funktionen.
+    Kurzer Tastendruck: feste Dimmstufen.
+    Langer Tastendruck: kontinuierliches Dimmen.
+    AUS-Taste: Farbtemperatur durchschalten.
+    Für Zigbee2MQTT und Philips Hue 9290023986.
+
+  domain: automation
+
+  input:
+    dimmer:
+      name: Philips Hue Dimmer
+      selector:
+        device:
+          integration: mqtt
+
+    dim_light:
+      name: Dimmlampe oder Lichtgruppe
+      selector:
+        entity:
+          domain: light
+
+    short_up_step:
+      name: HELLER – kurzer Tastendruck
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 50
+          step: 1
+          unit_of_measurement: "%"
+
+    short_down_step:
+      name: DUNKLER – kurzer Tastendruck
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 50
+          step: 1
+          unit_of_measurement: "%"
+
+    hold_step:
+      name: Dimmstufe bei langem Tastendruck
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 20
+          step: 1
+          unit_of_measurement: "%"
+
+    warm_kelvin:
+      name: Farbtemperatur 1 – Warmweiß
+      default: 2700
+      selector:
+        number:
+          min: 2000
+          max: 6500
+          step: 100
+          unit_of_measurement: K
+
+    neutral_kelvin:
+      name: Farbtemperatur 2 – Neutralweiß
+      default: 4000
+      selector:
+        number:
+          min: 2000
+          max: 6500
+          step: 100
+          unit_of_measurement: K
+
+    cold_kelvin:
+      name: Farbtemperatur 3 – Kaltweiß
+      default: 6000
+      selector:
+        number:
+          min: 2000
+          max: 6500
+          step: 100
+          unit_of_measurement: K
+
+    on_action:
+      name: EIN – kurzer Tastendruck
+      default: []
+      selector:
+        action:
+
+variables:
+  dim_step: !input hold_step
+  down_step: !input short_down_step
+  warm: !input warm_kelvin
+  neutral: !input neutral_kelvin
+  cold: !input cold_kelvin
+  target_light: !input dim_light
+
+triggers:
+  # EIN
+  - trigger: device
+    domain: mqtt
+    device_id: !input dimmer
+    type: action
+    subtype: on_press_release
+    id: on_short
+
+  # HELLER kurz
+  - trigger: device
+    domain: mqtt
+    device_id: !input dimmer
+    type: action
+    subtype: up_press_release
+    id: up_short
+
+  # DUNKLER kurz
+  - trigger: device
+    domain: mqtt
+    device_id: !input dimmer
+    type: action
+    subtype: down_press_release
+    id: down_short
+
+  # AUS kurz – Farbtemperatur wechseln
+  - trigger: device
+    domain: mqtt
+    device_id: !input dimmer
+    type: action
+    subtype: off_press_release
+    id: color_cycle
+
+  # HELLER halten
+  - trigger: device
+    domain: mqtt
+    device_id: !input dimmer
+    type: action
+    subtype: up_hold
+    id: up_hold
+
+  # DUNKLER halten
+  - trigger: device
+    domain: mqtt
+    device_id: !input dimmer
+    type: action
+    subtype: down_hold
+    id: down_hold
+
+actions:
+  - choose:
+
+      # EIN
+      - conditions:
+          - condition: trigger
+            id: on_short
+        sequence: !input on_action
+
+      # HELLER kurz
+      - conditions:
+          - condition: trigger
+            id: up_short
+        sequence:
+          - action: light.turn_on
+            target:
+              entity_id: !input dim_light
+            data:
+              brightness_step_pct: !input short_up_step
+
+      # DUNKLER kurz
+      - conditions:
+          - condition: trigger
+            id: down_short
+        sequence:
+          - action: light.turn_on
+            target:
+              entity_id: !input dim_light
+            data:
+              brightness_step_pct: "{{ 0 - (down_step | int) }}"
+
+      # HELLER lang
+      - conditions:
+          - condition: trigger
+            id: up_hold
+        sequence:
+          - action: light.turn_on
+            target:
+              entity_id: !input dim_light
+            data:
+              brightness_step_pct: "{{ dim_step | int }}"
+
+      # DUNKLER lang
+      - conditions:
+          - condition: trigger
+            id: down_hold
+        sequence:
+          - action: light.turn_on
+            target:
+              entity_id: !input dim_light
+            data:
+              brightness_step_pct: "{{ 0 - (dim_step | int) }}"
+
+      # FARB­TEMPERATUR WECHSELN
+      - conditions:
+          - condition: trigger
+            id: color_cycle
+        sequence:
+          - choose:
+              # Aktuell warm oder noch keine Temperatur:
+              # auf Neutralweiß wechseln
+              - conditions:
+                  - condition: template
+                    value_template: >
+                      {% set current = state_attr(target_light, 'color_temp_kelvin') | int(0) %}
+                      {{ current == 0 or current < ((warm + neutral) / 2) }}
+                sequence:
+                  - action: light.turn_on
+                    target:
+                      entity_id: !input dim_light
+                    data:
+                      color_temp_kelvin: !input neutral_kelvin
+
+              # Aktuell Neutralweiß:
+              # auf Kaltweiß wechseln
+              - conditions:
+                  - condition: template
+                    value_template: >
+                      {% set current = state_attr(target_light, 'color_temp_kelvin') | int(0) %}
+                      {{ current >= ((warm + neutral) / 2)
+                         and current < ((neutral + cold) / 2) }}
+                sequence:
+                  - action: light.turn_on
+                    target:
+                      entity_id: !input dim_light
+                    data:
+                      color_temp_kelvin: !input cold_kelvin
+
+            # Aktuell Kaltweiß:
+            # zurück auf Warmweiß
+            default:
+              - action: light.turn_on
+                target:
+                  entity_id: !input dim_light
+                data:
+                  color_temp_kelvin: !input warm_kelvin
+
+mode: queued
+max: 50
+max_exceeded: silent
